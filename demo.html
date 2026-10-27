@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seekee 2API Demo</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1117;color:#e2e6f0;min-height:100vh;padding:24px}
+.wrap{max-width:860px;margin:0 auto}
+h1{font-size:22px;margin-bottom:4px}
+h1 span{color:#7c8cff}
+.sub{color:#8b93a7;font-size:13px;margin-bottom:20px}
+.card{background:#171a24;border:1px solid #262b3a;border-radius:12px;padding:18px;margin-bottom:16px}
+.card h2{font-size:15px;margin-bottom:10px;color:#aab3c8}
+textarea{width:100%;height:90px;background:#0f1117;border:1px solid #2c3245;border-radius:8px;color:#e2e6f0;padding:10px;font-size:14px;resize:vertical}
+button{background:#5b6cff;color:#fff;border:0;border-radius:8px;padding:9px 22px;font-size:14px;cursor:pointer;margin-top:10px}
+button:hover{background:#4754e8}
+button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+img.result{max-width:100%;border-radius:8px;margin-top:8px}
+.status{font-size:13px;color:#8b93a7;margin-top:8px;white-space:pre-wrap}
+.ok{color:#4ade80}.err{color:#f87171}
+.kv{font-size:12px;color:#666e80;line-height:1.8}
+.kv b{color:#9aa3b8}
+</style>
+</head>
+<body><div class="wrap">
+<h1>Seekee <span>2API</span> Demo</h1>
+<div class="sub">Seekee v2.13.1 逆向 → 协议还原 → OpenAI 兼容网关 · 上游 ai-api/mobile-api.buscari.com · 本地 :8916</div>
+
+<div class="card">
+  <h2>AI 生图（OpenAI 兼容 /v1/images/generations）</h2>
+  <textarea id="prompt">a cute cat wearing sunglasses, cartoon style</textarea>
+  <button id="gen" onclick="gen()">生成图片</button>
+  <div class="status" id="st1"></div>
+  <div id="imgs" class="row"></div>
+</div>
+
+<div class="card">
+  <h2>原生端点</h2>
+  <button onclick="api('/native/playMethods',{},'st2')">play-methods-list（玩法模板 100 个）</button>
+  <button onclick="api('/native/textToImage',{question:'a rose',appId:''},'st2')">native textToImage 提交</button>
+  <button onclick="health('st2')">/health</button>
+  <div class="status" id="st2"></div>
+</div>
+
+<div class="card">
+  <div class="kv">
+    <b>协议要点</b>（已还原并实测）：<br>
+    · 签名: signVal = md5(b64(AES-ECB(urlencode(参数值拼接 + curTime))))<br>
+    · 密钥交换: aKey = b64(RSA-PKCS1(随机16位aesKey))，app_request_aes_key = md5(aKey)<br>
+    · 响应: code 00000 时 data 为 AES-ECB 加密，用请求侧 aesKey 解密<br>
+    · 生图链路: textToImage → taskId → getTaskResult 轮询 → OSS 图片 URL（实测 ~8-20s 出图）<br>
+    · 上游: dashscope(阿里通义) 出图，buscari 网关分发，buildCode=154 / versionCode=211
+  </div>
+</div>
+</div>
+<script>
+async function gen(){
+  const b=document.getElementById('gen'); b.disabled=true;
+  const st=document.getElementById('st1'); st.className='status'; st.textContent='提交中...';
+  document.getElementById('imgs').innerHTML='';
+  try{
+    const r=await fetch('/v1/images/generations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:document.getElementById('prompt').value})});
+    const j=await r.json();
+    if(j.data&&j.data.length){
+      st.className='status ok'; st.textContent='成功';
+      document.getElementById('imgs').innerHTML=j.data.map(u=>`<img class="result" src="${u.url}">`).join('');
+    } else { st.className='status err'; st.textContent='失败: '+JSON.stringify(j).slice(0,200); }
+  }catch(e){ st.className='status err'; st.textContent='错误: '+e; }
+  b.disabled=false;
+}
+async function api(p,body,id){
+  const st=document.getElementById(id); st.className='status'; st.textContent='请求中...';
+  try{
+    const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    st.className='status '+(j.code==='00000'||j.status?'ok':'err');
+    st.textContent=JSON.stringify(j).slice(0,600);
+  }catch(e){ st.className='status err'; st.textContent='错误: '+e; }
+}
+async function health(id){ api('/health',{},id); }
+</script>
+</body></html>
